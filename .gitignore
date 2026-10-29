@@ -1,0 +1,12 @@
+# Secrets and local state: never commit these
+.env
+data/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Local binaries
+bin/
+ffmpeg.exe
