@@ -35,7 +35,7 @@ from bot.config import (
     resolve_ffmpeg_path,
 )
 from bot.player import PlayerManager
-from bot import brain, licence
+from bot import brain, licence, stay
 
 # 3. Ensure Opus is loaded for Discord voice
 if not discord.opus.is_loaded():
@@ -92,6 +92,7 @@ class AudioBot(commands.Bot):
     async def setup_hook(self):
         """Asynchronously load extensions and synchronize slash commands."""
         self.loop.create_task(self._licence_watchdog())
+        self.loop.create_task(self._stay_watchdog())
 
         # Load cogs
         cogs = [
@@ -129,9 +130,47 @@ class AudioBot(commands.Bot):
         )
         await self.change_presence(status=discord.Status.online, activity=activity)
 
+    async def _rejoin(self, guild_id: int, delay: float = 0.0):
+        """24/7 mode: be in the saved voice channel of [guild_id] (after a restart or a dropped connection)."""
+        if delay:
+            await asyncio.sleep(delay)
+        channel_id = stay.channel_for(guild_id)
+        guild = self.get_guild(guild_id)
+        if not channel_id or not guild:
+            return
+        vc = guild.voice_client
+        if vc and vc.is_connected():
+            return
+        channel = guild.get_channel(channel_id)
+        if not isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
+            logger.warning(f"24/7 channel {channel_id} in {guild.name} is gone; 24/7 mode turned off there")
+            stay.disable(guild_id)
+            return
+        try:
+            if vc:  # a voice client that lost its connection
+                await vc.disconnect(force=True)
+            await channel.connect(self_deaf=True)
+            logger.info(f"24/7: joined {channel.name} in {guild.name}")
+        except Exception as e:
+            logger.warning(f"24/7: couldn't join {channel.name} in {guild.name}: {e}")
+
+    async def _stay_watchdog(self):
+        """24/7 mode: every few minutes, rejoin any saved channel the bot isn't in (if a rejoin failed)."""
+        await self.wait_until_ready()
+        while not self.is_closed():
+            for guild_id in stay.all_channels():
+                await self._rejoin(guild_id)
+            await asyncio.sleep(300)
+
     async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
         """Handle auto-disconnect when all other humans leave the voice channel."""
         if member.id == self.user.id:
+            guild_id = member.guild.id
+            if stay.channel_for(guild_id):
+                if after.channel and (not before.channel or before.channel.id != after.channel.id):
+                    stay.enable(guild_id, after.channel.id)  # moved: stay where it was moved to
+                elif before.channel and not after.channel:
+                    self.loop.create_task(self._rejoin(guild_id, delay=5))
             # If bot was disconnected externally by an admin
             if before.channel and not after.channel:
                 player = self.player_manager.remove_player(before.channel.guild.id)

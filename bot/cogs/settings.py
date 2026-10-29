@@ -3,12 +3,14 @@ Settings Cog module.
 Controls SponsorBlock filtering configuration, voice disconnection, latency checks, and help menu.
 """
 
+import asyncio
 import logging
 from typing import Optional, Literal
 import discord
-from discord import app_commands
+from discord import app_commands, ui
 from discord.ext import commands
 
+from bot import stay
 from bot.config import VALID_SPONSOR_CATEGORIES
 from bot.ui import create_help_view, notice, error_notice, MUTED
 
@@ -89,10 +91,44 @@ class SettingsCog(commands.Cog, name="Settings"):
             else:
                 await interaction.response.send_message(view=error_notice(f"`{cat_clean}` isn't being skipped."), ephemeral=True)
 
+    async def _toggle_stay(self, guild: discord.Guild, member) -> ui.LayoutView:
+        """Turns 24/7 mode on (in the bot's channel, or the member's) or off. Returns the reply."""
+        player = self.get_player(guild)
+        if stay.channel_for(guild.id):
+            stay.disable(guild.id)
+            player._reset_inactivity_timer()  # leaves again when idle, as usual
+            return notice("24/7 **off**\n-# Leaves after inactivity again", accent=MUTED)
+
+        vc = guild.voice_client
+        channel = vc.channel if vc and vc.channel else getattr(getattr(member, "voice", None), "channel", None)
+        if not channel:
+            return error_notice("Join a voice channel first.")
+        if not vc or not vc.is_connected():
+            try:
+                await channel.connect(self_deaf=True)
+            except (discord.ClientException, discord.HTTPException, asyncio.TimeoutError) as e:
+                logger.error(f"Failed to join for 24/7 mode: {e}")
+                return error_notice("Couldn't join your voice channel.")
+        stay.enable(guild.id, channel.id)
+        player._cancel_inactivity_timer()
+        return notice(f"24/7 **on**\n-# Staying in {channel.mention}, even after restarts. `/stay` again or `/leave` to stop")
+
+    @app_commands.command(name="stay", description="24/7 mode: stay in the voice channel and never leave (toggle)")
+    async def slash_stay(self, interaction: discord.Interaction):
+        if not interaction.guild:
+            return
+        await interaction.response.defer()
+        await interaction.followup.send(view=await self._toggle_stay(interaction.guild, interaction.user))
+
+    @commands.command(name="stay", aliases=["247"])
+    async def prefix_stay(self, ctx: commands.Context):
+        await ctx.send(view=await self._toggle_stay(ctx.guild, ctx.author))
+
     @app_commands.command(name="leave", description="Disconnect the bot from the voice channel")
     async def slash_leave(self, interaction: discord.Interaction):
         if not interaction.guild:
             return
+        stay.disable(interaction.guild.id)
         player = self.get_player(interaction.guild)
         await player.stop()
 
@@ -121,6 +157,7 @@ class SettingsCog(commands.Cog, name="Settings"):
     # Prefix commands
     @commands.command(name="leave", aliases=["dc", "disconnect"])
     async def prefix_leave(self, ctx: commands.Context):
+        stay.disable(ctx.guild.id)
         player = self.get_player(ctx.guild)
         await player.stop()
         vc = ctx.guild.voice_client

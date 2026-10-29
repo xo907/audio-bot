@@ -11,6 +11,7 @@ from typing import Optional, Dict
 import discord
 from discord.ext import commands
 
+from bot import stay
 from bot.config import (
     DEFAULT_VOLUME,
     INACTIVITY_TIMEOUT,
@@ -339,6 +340,8 @@ class GuildPlayer:
 
     def _reset_inactivity_timer(self) -> None:
         self._cancel_inactivity_timer()
+        if stay.channel_for(self.guild.id):
+            return  # 24/7 mode: never leave
         self._inactivity_task = self.bot.loop.create_task(self._inactivity_watcher())
 
     def _cancel_inactivity_timer(self) -> None:
@@ -351,6 +354,8 @@ class GuildPlayer:
         try:
             await asyncio.sleep(INACTIVITY_TIMEOUT)
             vc = self.voice_client
+            if stay.channel_for(self.guild.id):
+                return
             if vc and vc.is_connected() and not vc.is_playing() and not vc.is_paused():
                 if self.last_bound_channel:
                     try:

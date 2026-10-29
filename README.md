@@ -12,7 +12,7 @@ A modern, high-performance Discord music bot supporting **YouTube**, **YouTube M
 - **Interactive Search (`/search`)**: Search for any artist or track and select from an interactive dropdown menu with thumbnail previews.
 - **Minimalist, Clean UI**: No giant, cluttered embed cards. Features a clean dark-slate theme (`#2B2D31`), a live audio scrubber bar (`0:45 ━━●────── 3:20`), and icon-only interactive controls (`⏸️`, `⏭️`, `⏹️`, `🔁`, `📻`, `📜`).
 - **Channel & Playlist Fast-Unpack**: Uses lazy, flat metadata extraction to join voice channels instantly without 60-second timeouts, even on massive YouTube channel tabs (`@Artist`) while automatically filtering out vertical Shorts.
-- **Auto-Leave Watchdog**: Automatically disconnects when the voice channel is empty or playback has been idle for 3 minutes.
+- **Auto-Leave Watchdog**: Automatically disconnects when the voice channel is empty or playback has been idle for 3 minutes, unless **24/7 mode** (`/stay`) is on: then it stays in its channel and rejoins after restarts or dropped connections.
 
 ---
 
@@ -174,7 +174,8 @@ Both Slash Commands (`/command`) and Classic Prefix Commands (`!command`) are su
 | `/volume <1-150>` | Adjust playback volume |
 | `/autoplay` | Toggle continuous similar-content radio on or off |
 | `/sponsorblock` | Toggle or configure SponsorBlock skipping |
-| `/leave` | Disconnect the bot from voice |
+| `/stay` | 24/7 mode: stay in the voice channel and never leave, even after restarts (toggle) |
+| `/leave` | Disconnect the bot from voice (also turns 24/7 mode off) |
 | `/ping` | Check WebSocket gateway and voice connection latency |
 | `/help` | Show command reference guide |
 

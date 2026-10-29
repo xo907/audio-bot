@@ -140,6 +140,7 @@ def create_help_view() -> ui.LayoutView:
             "-# Settings\n"
             "`/autoplay` Keep playing similar music\n"
             "`/sponsorblock` Skip sponsors, intros, and filler\n"
+            "`/stay` 24/7: never leave the voice channel\n"
             "`/volume`  `/ping`  `/leave`"
         ),
     )
