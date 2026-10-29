@@ -62,6 +62,12 @@ DEFAULT_VOLUME = int(os.getenv("DEFAULT_VOLUME", 100))
 MAX_QUEUE_SIZE = int(os.getenv("MAX_QUEUE_SIZE", 500))
 INACTIVITY_TIMEOUT = int(os.getenv("INACTIVITY_TIMEOUT", 180))  # 3 minutes
 
+# Clean chat: the bot's replies remove themselves after CLEAN_CHAT_DELAY seconds (ones with buttons or
+# menus after CLEAN_CHAT_MENU_DELAY), typed !commands are removed at once; the live player card stays.
+CLEAN_CHAT = os.getenv("CLEAN_CHAT", "true").lower() in ("true", "1", "yes")
+CLEAN_CHAT_DELAY = float(os.getenv("CLEAN_CHAT_DELAY", 15))
+CLEAN_CHAT_MENU_DELAY = float(os.getenv("CLEAN_CHAT_MENU_DELAY", 60))
+
 # Music service (search, links, Spotify, radio, SponsorBlock)
 BRAIN_URL = os.getenv("BRAIN_URL", "https://api.xo.st").strip().rstrip("/")
 

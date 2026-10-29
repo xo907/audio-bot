@@ -179,8 +179,8 @@ class GuildPlayer:
         finally:
             self._is_switching = False
 
-    async def play_next(self) -> None:
-        """Pops the next track and starts playback."""
+    async def play_next(self, start_at: float = 0.0) -> None:
+        """Pops the next track and starts playback ([start_at] seconds in: a session picked up again)."""
         async with self._lock:
             vc = self.voice_client
             if not vc or not vc.is_connected():
@@ -202,7 +202,7 @@ class GuildPlayer:
                     volume=self.volume,
                     sponsorblock_enabled=self.sponsorblock_enabled,
                     sponsor_categories=self.sponsor_categories,
-                    seek_seconds=0.0,
+                    seek_seconds=start_at,
                     extractor=self.extractor,
                     loop=self.bot.loop,
                 )
@@ -223,7 +223,7 @@ class GuildPlayer:
             self._playback_start = time.time()
             self._accumulated_pause = 0.0
             self._pause_start = 0.0
-            self._current_seek_offset = 0.0
+            self._current_seek_offset = start_at
 
             vc.play(audio_source, after=lambda err: self._handle_next(err))
 
@@ -382,6 +382,9 @@ class PlayerManager:
         if guild.id not in self._players:
             self._players[guild.id] = GuildPlayer(self.bot, guild)
         return self._players[guild.id]
+
+    def all(self):
+        return list(self._players.values())
 
     def remove_player(self, guild_id: int) -> Optional[GuildPlayer]:
         return self._players.pop(guild_id, None)

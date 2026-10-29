@@ -7,6 +7,7 @@ loads music and settings cogs, and configures modern minimal presence.
 import asyncio
 import logging
 import os
+import signal
 import sys
 from pathlib import Path
 import discord
@@ -31,11 +32,15 @@ logger = logging.getLogger("AudioBot")
 from bot.config import (
     DISCORD_TOKEN,
     COMMAND_PREFIX,
+    CLEAN_CHAT,
+    CLEAN_CHAT_DELAY,
+    CLEAN_CHAT_MENU_DELAY,
     FFMPEG_EXECUTABLE,
     resolve_ffmpeg_path,
 )
 from bot.player import PlayerManager
-from bot import brain, licence, stay
+from bot import brain, channel_lock, licence, session, stay
+from bot.ui import notice, MUTED
 
 # 3. Ensure Opus is loaded for Discord voice
 if not discord.opus.is_loaded():
@@ -65,15 +70,30 @@ class AudioBot(commands.Bot):
         # revoked while the bot is running, until the watchdog below shuts it down).
         self.add_check(self._licensed_check)
         self.tree.interaction_check = self._licensed_interaction
+        self._sessions_ready = False   # nothing is saved over the file until it has been picked up again
+        self._closing = False
 
     async def _licensed_check(self, ctx: commands.Context) -> bool:
-        return licence.licensed()
+        if not licence.licensed():
+            return False
+        if ctx.command and ctx.command.name == "channel":   # (so it can always be changed)
+            return True
+        if not channel_lock.allowed(ctx.guild.id if ctx.guild else None, ctx.channel.id):
+            await ctx.send(view=notice(f"-# I only work in <#{channel_lock.channel_for(ctx.guild.id)}>", accent=MUTED))
+            return False
+        return True
 
     async def _licensed_interaction(self, interaction: discord.Interaction) -> bool:
-        if licence.licensed():
+        if not licence.licensed():
+            await interaction.response.send_message(f"This bot needs a key: {licence.KEY_PAGE}", ephemeral=True)
+            return False
+        if interaction.command and interaction.command.name == "channel":
             return True
-        await interaction.response.send_message(f"This bot needs a key: {licence.KEY_PAGE}", ephemeral=True)
-        return False
+        if not channel_lock.allowed(interaction.guild_id, interaction.channel_id):
+            await interaction.response.send_message(
+                f"I only work in <#{channel_lock.channel_for(interaction.guild_id)}>", ephemeral=True)
+            return False
+        return True
 
     async def _licence_watchdog(self):
         """Renews the licence about once a day; a revoked or expired key shuts the bot down."""
@@ -86,13 +106,101 @@ class AudioBot(commands.Bot):
                 return
 
     async def close(self):
+        # Save what was playing first (leaving voice below empties the players)
+        if self._sessions_ready and not self._closing:
+            try:
+                session.save_all(self.player_manager.all())
+            except Exception as e:
+                logger.error(f"Couldn't save the sessions: {e}")
+        self._closing = True
         await brain.close()
         await super().close()
+
+    # ---------------------------------------------------------------- saved sessions
+
+    async def _session_saver(self):
+        """Saves what each server is listening to every few seconds (and close() does at shutdown)."""
+        while not self.is_closed() and not self._closing:
+            try:
+                session.save_all(self.player_manager.all())
+            except Exception as e:
+                logger.debug(f"Session save failed: {e}")
+            await asyncio.sleep(15)
+
+    async def _restore_sessions(self):
+        """After a restart: rejoin each saved voice channel and carry on where it was."""
+        for guild_id, s in session.load_all().items():
+            guild = self.get_guild(guild_id)
+            channel = guild.get_channel(s.get("voice")) if guild else None
+            if not isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
+                continue
+            try:
+                vc = guild.voice_client
+                if not vc or not vc.is_connected():
+                    await channel.connect(self_deaf=True)
+                elif vc.channel.id != channel.id:
+                    await vc.move_to(channel)
+                player = self.player_manager.get_player(guild)
+                text = guild.get_channel(s.get("text")) if s.get("text") else None
+                player.last_bound_channel = text
+                if text and s.get("now_playing"):
+                    try:
+                        await text.get_partial_message(s["now_playing"]).delete()   # the card from before
+                    except Exception:
+                        pass
+                first = session.restore_into(player, s)
+                if not first:
+                    continue
+                start_at = float(s.get("position") or 0) if s.get("current") else 0.0
+                await player.play_next(start_at=start_at if start_at > 10 else 0.0)
+                if s.get("paused"):
+                    player.pause()
+                    await player.refresh_now_playing_message()
+                if text:
+                    await text.send(view=notice("-# Back after a restart: picked up where it left off", accent=MUTED))
+                logger.info(f"Picked up the session in {guild.name}: '{first.title}' at {int(start_at)}s, "
+                            f"{len(player.queue)} queued")
+            except Exception as e:
+                logger.warning(f"Couldn't pick up the session in guild {guild_id}: {e}")
+
+    # ---------------------------------------------------------------- clean chat
+
+    async def _tidy_later(self, message: discord.Message):
+        """Clean chat: removes one of the bot's replies after a while (never the live player card)."""
+        await asyncio.sleep(CLEAN_CHAT_MENU_DELAY if message.components else CLEAN_CHAT_DELAY)
+        if any(p.now_playing_message and p.now_playing_message.id == message.id for p in self.player_manager.all()):
+            return
+        try:
+            await message.delete()
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            pass
+
+    async def on_message_edit(self, before: discord.Message, after: discord.Message):
+        if CLEAN_CHAT and after.author.id == self.user.id and before.flags.loading and not after.flags.loading:
+            self.loop.create_task(self._tidy_later(after))
+
+    async def on_message(self, message: discord.Message):
+        if not message.guild:
+            return await self.process_commands(message)
+        if message.author.id == self.user.id:
+            if CLEAN_CHAT and not message.flags.loading:   # ("is thinking…": counted from when it's answered)
+                self.loop.create_task(self._tidy_later(message))
+            return
+        await self.process_commands(message)
+        if CLEAN_CHAT and not message.author.bot and message.content.startswith(COMMAND_PREFIX):
+            ctx = await self.get_context(message)
+            if ctx.valid and message.channel.permissions_for(message.guild.me).manage_messages:
+                try:
+                    await message.delete(delay=1)
+                except discord.HTTPException:
+                    pass
 
     async def setup_hook(self):
         """Asynchronously load extensions and synchronize slash commands."""
         self.loop.create_task(self._licence_watchdog())
         self.loop.create_task(self._stay_watchdog())
+        if sys.platform != "win32":  # systemd stops the bot with SIGTERM: save the sessions first
+            self.loop.add_signal_handler(signal.SIGTERM, lambda: self.loop.create_task(self.close()))
 
         # Load cogs
         cogs = [
@@ -157,6 +265,10 @@ class AudioBot(commands.Bot):
     async def _stay_watchdog(self):
         """24/7 mode: every few minutes, rejoin any saved channel the bot isn't in (if a rejoin failed)."""
         await self.wait_until_ready()
+        if not self._sessions_ready:
+            await self._restore_sessions()
+            self._sessions_ready = True
+            self.loop.create_task(self._session_saver())
         while not self.is_closed():
             for guild_id in stay.all_channels():
                 await self._rejoin(guild_id)

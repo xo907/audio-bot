@@ -10,7 +10,7 @@ import discord
 from discord import app_commands, ui
 from discord.ext import commands
 
-from bot import stay
+from bot import channel_lock, stay
 from bot.config import VALID_SPONSOR_CATEGORIES
 from bot.ui import create_help_view, notice, error_notice, MUTED
 
@@ -112,6 +112,29 @@ class SettingsCog(commands.Cog, name="Settings"):
         stay.enable(guild.id, channel.id)
         player._cancel_inactivity_timer()
         return notice(f"24/7 **on**\n-# Staying in {channel.mention}, even after restarts. `/stay` again or `/leave` to stop")
+
+    async def _toggle_channel(self, guild: discord.Guild, channel, member) -> ui.LayoutView:
+        """Limits the bot to [channel], or lifts the limit when it's already that channel."""
+        if not getattr(getattr(member, "guild_permissions", None), "manage_guild", False):
+            return error_notice("Only people who can manage the server can change this.")
+        locked = channel_lock.channel_for(guild.id)
+        if locked == channel.id:
+            channel_lock.unlock(guild.id)
+            return notice("Works in **every channel** again", accent=MUTED)
+        channel_lock.lock(guild.id, channel.id)
+        return notice(f"Only works in {channel.mention} now\n-# `/channel` here again to work everywhere")
+
+    @app_commands.command(name="channel", description="Only work in this channel (use again here to work everywhere)")
+    @app_commands.default_permissions(manage_guild=True)
+    async def slash_channel(self, interaction: discord.Interaction):
+        if not interaction.guild or not interaction.channel:
+            return
+        await interaction.response.send_message(
+            view=await self._toggle_channel(interaction.guild, interaction.channel, interaction.user))
+
+    @commands.command(name="channel")
+    async def prefix_channel(self, ctx: commands.Context):
+        await ctx.send(view=await self._toggle_channel(ctx.guild, ctx.channel, ctx.author))
 
     @app_commands.command(name="stay", description="24/7 mode: stay in the voice channel and never leave (toggle)")
     async def slash_stay(self, interaction: discord.Interaction):
