@@ -8,6 +8,7 @@ import time
 from typing import Optional, List, TYPE_CHECKING
 import discord
 from discord import ui
+from bot import likes
 from bot.audio_source import Track
 from bot.queue_manager import MusicQueue, LoopMode
 
@@ -133,6 +134,7 @@ def create_help_view() -> ui.LayoutView:
             "-# Queue\n"
             "`/nowplaying` Player with controls\n"
             "`/queue` Upcoming tracks\n"
+            "`/liked` Your liked songs (❤️ on the player)\n"
             "`/shuffle`  `/loop`  `/remove`  `/clear`"
         ),
         ui.Separator(),
@@ -243,6 +245,19 @@ class NowPlayingView(ui.LayoutView):
         if status:
             container.add_item(ui.TextDisplay(f"-# {_join(*status)}"))
 
+        # Likes: who liked this song, and the button to like it (anyone can, not only listeners)
+        self.track = track
+        who = likes.likers(track)
+        if who:
+            names = ", ".join(f"<@{uid}>" for uid in who[:5]) + (f" +{len(who) - 5} more" if len(who) > 5 else "")
+            liked_line = f"-# Liked by {names}"
+        else:
+            liked_line = "-# No likes yet"
+        like_button = ui.Button(emoji="❤️", label=str(len(who)) if who else None,
+                                style=discord.ButtonStyle.secondary, custom_id="np:like")
+        like_button.callback = self._like
+        container.add_item(ui.Section(ui.TextDisplay(liked_line), accessory=like_button))
+
         self.add_item(container)
 
     @staticmethod
@@ -255,7 +270,17 @@ class NowPlayingView(ui.LayoutView):
         return button
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if (interaction.data or {}).get("custom_id") == "np:like":
+            return True
         return await _check_member(interaction)
+
+    async def _like(self, interaction: discord.Interaction):
+        liked = likes.toggle(interaction.user.id, self.track)
+        await self._rerender(interaction)
+        await interaction.followup.send(
+            view=notice(f"❤️ Added to your liked songs\n-# `/liked` to see them all" if liked
+                        else "-# Removed from your liked songs", accent=ACCENT if liked else MUTED),
+            ephemeral=True)
 
     async def _rerender(self, interaction: discord.Interaction) -> None:
         """Redraw the card that was clicked, plus the live player card if it's a different message."""
@@ -364,6 +389,58 @@ class QueueView(ui.LayoutView):
 
     async def _next(self, interaction: discord.Interaction):
         await interaction.response.edit_message(view=QueueView(self.queue, self.page + 1))
+
+
+# =========================================================================
+# LIKED SONGS
+# =========================================================================
+
+class LikedView(ui.LayoutView):
+    """Someone's liked songs, a page at a time, with a button to queue them all."""
+
+    def __init__(self, owner: discord.abc.User, songs: List[dict], play_all, page: int = 1):
+        super().__init__(timeout=300.0)
+        self.owner, self.songs, self.play_all = owner, songs, play_all
+        total_pages = max(1, -(-len(songs) // QUEUE_PAGE_SIZE))
+        self.page = page = max(1, min(page, total_pages))
+
+        container = ui.Container(accent_colour=ACCENT)
+        count = len(songs)
+        container.add_item(ui.TextDisplay(
+            f"-# ❤️ Liked songs  ·  {owner.mention}  ·  {count} song{'s' if count != 1 else ''}"))
+        if not songs:
+            container.add_item(ui.TextDisplay("Nothing liked yet. Press ❤️ on the player to like a song."))
+        else:
+            container.add_item(ui.Separator())
+            start = (page - 1) * QUEUE_PAGE_SIZE
+            chunk = songs[start:start + QUEUE_PAGE_SIZE]
+            width = len(str(start + len(chunk)))
+            lines = []
+            for i, d in enumerate(chunk, start=start + 1):
+                t = Track.from_brain(d)
+                lines.append(f"`{i:>{width}}`  {_link(t, 45)}  ·  {_artist(t, 25)}  `{t.formatted_duration}`")
+            container.add_item(ui.TextDisplay("\n".join(lines)))
+            container.add_item(ui.Separator())
+            play = ui.Button(emoji="▶️", label=f"Play all {count}", style=discord.ButtonStyle.primary)
+            play.callback = self._play
+            row = [play]
+            if total_pages > 1:
+                prev_btn = ui.Button(emoji="◀️", style=discord.ButtonStyle.secondary, disabled=page <= 1)
+                next_btn = ui.Button(emoji="▶️", style=discord.ButtonStyle.secondary, disabled=page >= total_pages)
+                prev_btn.callback, next_btn.callback = self._prev, self._next
+                row += [prev_btn, ui.Button(label=f"{page} / {total_pages}", style=discord.ButtonStyle.secondary,
+                                            disabled=True), next_btn]
+            container.add_item(ui.ActionRow(*row))
+        self.add_item(container)
+
+    async def _prev(self, interaction: discord.Interaction):
+        await interaction.response.edit_message(view=LikedView(self.owner, self.songs, self.play_all, self.page - 1))
+
+    async def _next(self, interaction: discord.Interaction):
+        await interaction.response.edit_message(view=LikedView(self.owner, self.songs, self.play_all, self.page + 1))
+
+    async def _play(self, interaction: discord.Interaction):
+        await self.play_all(interaction, self.owner, self.songs)
 
 
 # =========================================================================

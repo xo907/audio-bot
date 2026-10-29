@@ -63,6 +63,7 @@ class AudioBot(commands.Bot):
             command_prefix=COMMAND_PREFIX,
             intents=intents,
             help_command=None,  # We provide custom clean /help
+            allowed_mentions=discord.AllowedMentions.none(),  # (names like "Liked by @…" never ping anyone)
         )
         self.player_manager = PlayerManager(self)
 

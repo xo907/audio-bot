@@ -12,6 +12,7 @@ A modern, high-performance Discord music bot supporting **YouTube**, **YouTube M
 - **Interactive Search (`/search`)**: Search for any artist or track and select from an interactive dropdown menu with thumbnail previews.
 - **Minimalist, Clean UI**: No giant, cluttered embed cards. Features a clean dark-slate theme (`#2B2D31`), a live audio scrubber bar (`0:45 ━━●────── 3:20`), and icon-only interactive controls (`⏸️`, `⏭️`, `⏹️`, `🔁`, `📻`, `📜`).
 - **Channel & Playlist Fast-Unpack**: Uses lazy, flat metadata extraction to join voice channels instantly without 60-second timeouts, even on massive YouTube channel tabs (`@Artist`) while automatically filtering out vertical Shorts.
+- **Liked Songs**: ❤️ on the player likes the song playing; the card shows who liked it, and `/liked` lists anyone's liked songs with a button to play them all.
 - **Picks Up After Restarts**: The song, position, queue and settings are saved every few seconds, so after a restart or an update the bot rejoins and carries on where it was.
 - **Clean Chat**: The bot's replies remove themselves after 15 seconds (60 for ones with buttons or menus) and typed `!commands` are removed at once (needs **Manage Messages** for that), so only the live player stays. Turn it off with `CLEAN_CHAT=false` in `.env`.
 - **One Channel Only**: `/channel` limits the bot to the channel it's used in (for people who can manage the server).
@@ -177,6 +178,7 @@ Both Slash Commands (`/command`) and Classic Prefix Commands (`!command`) are su
 | `/volume <1-150>` | Adjust playback volume |
 | `/autoplay` | Toggle continuous similar-content radio on or off |
 | `/sponsorblock` | Toggle or configure SponsorBlock skipping |
+| `/liked [user]` | Liked songs (yours, or someone's), with **Play all**. Like a song with ❤️ on the player |
 | `/channel` | Only work in this channel; use it there again to work everywhere (Manage Server) |
 | `/stay` | 24/7 mode: stay in the voice channel and never leave, even after restarts (toggle) |
 | `/leave` | Disconnect the bot from voice (also turns 24/7 mode off) |

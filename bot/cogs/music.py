@@ -13,7 +13,9 @@ from discord.ext import commands
 
 from bot.audio_source import track_extractor, Track
 from bot.queue_manager import LoopMode
+from bot import likes
 from bot.ui import (
+    LikedView,
     NowPlayingView,
     QueueView,
     SearchView,
@@ -152,6 +154,34 @@ class MusicCog(commands.Cog, name="Music"):
         view = self._enqueue(player, tracks, playlist_title, interaction.user)
         await interaction.followup.send(view=view)
         await self._start(player, tracks[0])
+
+    async def _play_liked(self, interaction: discord.Interaction, owner, songs: List[dict]) -> None:
+        """'Play all' on a liked-songs list: queues them for the person who pressed it."""
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        if not songs:
+            await interaction.followup.send(view=error_notice("No liked songs to play."), ephemeral=True)
+            return
+        res = await self._ensure_voice(interaction)
+        if not res:
+            return
+        player, _ = res
+        tracks = [Track.from_brain(d, requester=interaction.user) for d in songs]
+        name = "Your" if owner.id == interaction.user.id else f"{owner.display_name}'s"
+        view = self._enqueue(player, tracks, f"❤️ {name} liked songs", interaction.user)
+        await interaction.followup.send(view=view)
+        await self._start(player, tracks[0])
+
+    @app_commands.command(name="liked", description="See liked songs (yours, or someone else's) and play them")
+    @app_commands.describe(user="Whose liked songs to show (you, if left out)")
+    async def slash_liked(self, interaction: discord.Interaction, user: Optional[discord.Member] = None):
+        owner = user or interaction.user
+        await interaction.response.send_message(
+            view=LikedView(owner, likes.liked_by(owner.id), self._play_liked), ephemeral=True)
+
+    @commands.command(name="liked", aliases=["likes"])
+    async def prefix_liked(self, ctx: commands.Context, user: Optional[discord.Member] = None):
+        owner = user or ctx.author
+        await ctx.send(view=LikedView(owner, likes.liked_by(owner.id), self._play_liked))
 
     @app_commands.command(name="search", description="Search for music and choose from a list of results")
     @app_commands.describe(query="Song title or artist to search for")
