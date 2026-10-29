@@ -43,6 +43,12 @@ only answers bots with a valid key. No Spotify credentials are needed on your si
 
 **1. Install Python, FFmpeg, Opus and Git**
 
+> Logged in as `root` with no `sudo` (common on a VPS, where you get `sudo: command not found`)? Run this
+> first, and every command below then works as written:
+> ```bash
+> apt update && apt install -y sudo
+> ```
+
 Debian / Ubuntu:
 ```bash
 sudo apt update && sudo apt install -y python3 python3-venv python3-pip ffmpeg libopus0 git
