@@ -31,40 +31,118 @@ Create a free, private personal Discord server just for you (and your friends). 
 
 ## 🚀 Quick Start
 
-### 1. Requirements
-- **Python 3.10+** (Python 3.12 is recommended)
-- **FFmpeg** (Already detected automatically on your system)
-- A **Discord Bot Token** from the [Discord Developer Portal](https://discord.com/developers/applications)
+You need:
+- A **Discord bot token** from the [Discord Developer Portal](https://discord.com/developers/applications)
+  (Applications › your app › **Bot** › Reset Token). On that same page, turn on **Message Content Intent**.
+- A **key** from **https://xo.st/keys/**: the same key that unlocks SaveX and GalleryX.
 
-### 2. Get a Key
-The bot needs a key to run: the same key that unlocks SaveX and GalleryX. Get yours at **https://xo.st/keys/**,
-then put it in `.env` (or paste it when the bot asks on first start):
-```env
-LICENSE_KEY=SAVEX-XXXXX-XXXXX-XXXXX-XXXXX
-```
 Searching, links, Spotify, autoplay radio and SponsorBlock go through the music service at `api.xo.st`, which
-only answers bots with a valid key, so the bot needs an internet connection (it needs one for Discord anyway). To move the key to another computer, run `python main.py --remove-key` on the old one first.
+only answers bots with a valid key. No Spotify credentials are needed on your side.
 
-### 3. Configure Token
-Open `.env` in the bot directory and paste your bot token:
-```env
-DISCORD_TOKEN=your_bot_token_here
-```
+### 🐧 Linux
 
-Spotify links (tracks, albums and playlists) work out of the box: no Spotify credentials needed.
+**1. Install Python, FFmpeg, Opus and Git**
 
-### 4. Launch
-On **Windows**:
-Double-click `run.bat` or open PowerShell in the project directory and run:
-```powershell
-.\.venv\Scripts\python.exe main.py
-```
-
-On **Linux / macOS**:
+Debian / Ubuntu:
 ```bash
-chmod +x run.sh
-./run.sh
+sudo apt update && sudo apt install -y python3 python3-venv python3-pip ffmpeg libopus0 git
 ```
+
+Fedora:
+```bash
+sudo dnf install -y python3 python3-pip ffmpeg-free opus git
+```
+
+Arch:
+```bash
+sudo pacman -S --needed python python-pip ffmpeg opus git
+```
+
+**2. Download the bot**
+```bash
+git clone https://github.com/xo907/audio-bot.git && cd audio-bot
+```
+
+**3. Install its packages**
+```bash
+python3 -m venv .venv && .venv/bin/pip install --upgrade pip && .venv/bin/pip install -r requirements.txt
+```
+
+**4. Add your token and key**
+
+Replace `PASTE_YOUR_TOKEN_HERE` and `PASTE_YOUR_KEY_HERE` in this command with your own, then run it:
+```bash
+cp .env.example .env && sed -i -e 's|^DISCORD_TOKEN=.*|DISCORD_TOKEN=PASTE_YOUR_TOKEN_HERE|' -e 's|^LICENSE_KEY=.*|LICENSE_KEY=PASTE_YOUR_KEY_HERE|' .env
+```
+(Or open it in an editor: `nano .env`. The other settings in it are optional.)
+
+**5. Start it**
+```bash
+.venv/bin/python main.py
+```
+You should see `Licence OK` or `Key activated`, then `Logged in as: …`. Press `Ctrl+C` to stop it.
+
+**6. Invite it to your server**
+
+In the Developer Portal: your app › **OAuth2** › URL Generator. Tick `bot` and `applications.commands`, then
+under Bot Permissions tick `View Channels`, `Send Messages`, `Embed Links`, `Connect` and `Speak`. Open the
+generated link and pick your server.
+
+#### Keep it running (optional)
+
+To run the bot in the background, start it when the computer boots, and restart it if it crashes, run these
+**from inside the `audio-bot` folder**:
+```bash
+sudo tee /etc/systemd/system/audio-bot.service > /dev/null <<EOF
+[Unit]
+Description=Discord Audio Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=$USER
+WorkingDirectory=$PWD
+ExecStart=$PWD/.venv/bin/python main.py
+Restart=on-failure
+RestartSec=10
+RestartPreventExitStatus=2
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+```bash
+sudo systemctl daemon-reload && sudo systemctl enable --now audio-bot
+```
+
+Check on it, watch its log, or restart it:
+```bash
+systemctl status audio-bot
+```
+```bash
+journalctl -u audio-bot -f
+```
+```bash
+sudo systemctl restart audio-bot
+```
+
+#### Update to the latest version
+```bash
+git pull && .venv/bin/pip install -r requirements.txt && sudo systemctl restart audio-bot
+```
+(Leave out `&& sudo systemctl restart audio-bot` if you didn't set up the service.)
+
+#### Move the key to another computer
+Each key works in a limited number of places. Free this one up first:
+```bash
+.venv/bin/python main.py --remove-key
+```
+
+### 🪟 Windows
+
+Install [Python 3.10+](https://www.python.org/) (tick "Add Python to PATH") and FFmpeg (`winget install ffmpeg`),
+download the bot, then double-click `run.bat`. It sets everything up, creates `.env`, and asks for your key the
+first time. Put your bot token in `.env` as `DISCORD_TOKEN=…`.
 
 ---
 

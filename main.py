@@ -154,7 +154,7 @@ def _stop(lines):
     for line in lines:
         print(f" {line}")
     print("=" * 60 + "\n")
-    sys.exit(1)
+    sys.exit(2)  # a setup problem (key or token): restarting won't help
 
 
 def ensure_licence():
@@ -202,7 +202,7 @@ def main():
         print(" Please open the '.env' file in this folder and paste")
         print(" your Discord Bot Token, then run again.")
         print("=" * 60 + "\n")
-        sys.exit(1)
+        sys.exit(2)  # a setup problem (key or token): restarting won't help
 
     ensure_licence()
     bot = AudioBot()
@@ -214,7 +214,7 @@ def main():
         print(" [!] Invalid Discord Bot Token.")
         print(" Please verify the DISCORD_TOKEN value in your .env file.")
         print("=" * 60 + "\n")
-        sys.exit(1)
+        sys.exit(2)  # a setup problem (key or token): restarting won't help
     except KeyboardInterrupt:
         print("\nShutting down bot cleanly...")
 
